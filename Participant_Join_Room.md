@@ -1,8 +1,8 @@
 ## 3. 参会者 (Participant) 加入房间
 
-### 3.1 调用 StartSession() 启动参会者Session
+### 3.1 参会者加入房间，启动会议 Session
 
-每个参会者 (Participant) 加入会议都需要调用 RoomManager.StartSession() 函数，为该 Participant 创建一个单独的 Session 并启动一个go协程单独处理该 Participant 的消息。函数 StartSession() 的源码位于 /pkg/service/roommanager.go 中，定义如下：
+每个参会者 (Participant) 都是通过调用 RoomManager.StartSession() 函数进入房间参加会议的。StartSession() 函数为新加入的参会者创建一个单独的 Session，并启动一个 go 协程单独处理该参会者的消息。函数 StartSession() 的源码位于 /pkg/service/roommanager.go 中，定义如下：
 
 ```go
 // StartSession starts WebRTC session when a new participant is connected, takes place on RTC node
@@ -46,12 +46,36 @@ graph TB
     service.NewDefaultSignalServer-->RoomManager.StartSession
 ```
 
-### 3.2 获取或创建房间 (getOrCreateRoom)
+### 3.2 房间不存在，创建新房间
 
-在 StartSession() 函数首先将为加入的参会者根据其欲加入的房间的 RoomName 调用 getOrCreateRoom() 函数获取房间对象。如果房间还未创建，将先创建名字为 RoomName 的房间。getOrCreateRoom() 函数的定义如下：
+StartSession() 函数首先将为刚加入的参会者，根据其入会请求的 Token 中携带的欲加入的房间的 RoomName 调用 getOrCreateRoom() 函数，查找房间对象。如果房间还未创建，getOrCreateRoom 将会创建名为 RoomName 的房间并返回房间对象。
+</br>
+
+getOrCreateRoom() 函数的定义如下：
 
 ```go
 func (r *RoomManager) getOrCreateRoom(ctx context.Context, roomName livekit.RoomName) (*rtc.Room, error)
+```
+
+其主要功能包括一下流程：
+
+```mermaid
+graph TB
+    StartSession_called-->getOrCreateRoom-->room.GetParticipant
+    
+    room.GetParticipant--participant exist-->room.ResumeParticipant
+    
+    room.ResumeParticipant-->send_ReconnectResponse_to_client
+    room.ResumeParticipant-->start_r.rtcSessionWorker
+
+    room.GetParticipant--participant not exist-->rtc.NewParticipant
+
+    rtc.NewParticipant-->room.Join
+    
+    room.Join-->start_r.rtcSessionWorker-->StartSession_returns
+    room.Join-->send_JoinResponse_to_client
+
+
 ```
 
 #### 3.2.1 获取存在的房间
@@ -70,7 +94,7 @@ func (r *RoomManager) getOrCreateRoom(ctx context.Context, roomName livekit.Room
 
 #### 3.2.2 房间不存在，为创建房间获取房间信息
 
-如房间不存在，就先调用 ServiceStore 接口的 LoadRoom() 函数获取房间信息。RoomManager的成员roomStore是实现了 ObjectStore 接口（ObjectStore接口继承了ServiceStore接口）的实例，会根据实例的不同，调用不同版本的 LoadRoom() 实现。由于 livekit-server 支持本地存储和 Redis 存储两种方式启动，房间信息也根据启动 livekit-server 时配置文件 config.yaml 中 redis 存储的启用与否，会调用不同版本（LocalStore或者RedisStore）的 ObjectStore 接口实现。
+如房间不存在，就先调用 ServiceStore 接口的 LoadRoom() 函数获取房间信息。RoomManager 的成员 roomStore 实现了 ObjectStore 接口（ObjectStore接口继承 ServiceStore 接口）的实例，会根据实例的不同，调用不同版本的 LoadRoom() 实现。由于 livekit-server 支持本地存储和 Redis 存储两种方式启动，房间信息也根据启动 livekit-server 时配置文件 config.yaml 中 redis 存储的启用与否，调用不同版本（LocalStore 或者 RedisStore）的 ObjectStore 接口实现。
 
 ```go
     // create new room, get details first
@@ -269,6 +293,47 @@ func (r *RoomManager) getOrCreateRoom(ctx context.Context, roomName livekit.Room
 
 ```go
 go r.rtcSessionWorker(room, participant, requestSource)
+```
+
+下面是协程 rtcSessionWorker 的主要功能逻辑：
+
+```go
+// manages an RTC session for a participant, runs on the RTC node
+func (r *RoomManager) rtcSessionWorker(room *rtc.Room, participant types.LocalParticipant, requestSource routing.MessageSource) {
+
+    ...
+
+    // send first refresh for cases when client token is close to expiring
+    _ = r.refreshToken(participant)
+    tokenTicker := time.NewTicker(tokenRefreshInterval)
+    defer tokenTicker.Stop()
+    stateCheckTicker := time.NewTicker(time.Millisecond * 500)
+    defer stateCheckTicker.Stop()
+    for {
+        select {
+        case <-stateCheckTicker.C:
+            // periodic check to ensure participant didn't become disconnected
+            if participant.IsDisconnected() {
+                return
+            }
+        case <-tokenTicker.C:
+            // refresh token with the first API Key/secret pair
+            if err := r.refreshToken(participant); err != nil {
+                pLogger.Errorw("could not refresh token", err, "connID", requestSource.ConnectionID())
+            }
+        case obj := <-requestSource.ReadChan():
+            
+            ...
+
+            req := obj.(*livekit.SignalRequest)
+            if err := rtc.HandleParticipantSignal(room, participant, req, pLogger); err != nil {
+                // more specific errors are already logged
+                // treat errors returned as fatal
+                return
+            }
+        }
+    }
+}
 ```
 
 协程 RoomManager.rtcSessionWorker() 负责的工作是：
