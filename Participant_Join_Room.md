@@ -1,4 +1,4 @@
-## 3. 参会者 (Participant) 加入房间
+## 3. 参会人 (Participant) 加入房间
 
 ### 3.1 StartSession() 的调用路径
 
@@ -54,20 +54,20 @@ StartSession() 函数的主要流程如下图所示：
 
 ```mermaid
 graph TB
-    StartSession_called-->getOrCreateRoom-->room.GetParticipant
+    StartSession_begins-->getOrCreateRoom-->room.GetParticipant
     
-    room.GetParticipant--participant exist-->room.ResumeParticipant
+    room.GetParticipant--participant exists-->room.ResumeParticipant
     
     room.ResumeParticipant--send ReconnectResponse-->client
     
-    room.ResumeParticipant--failed-->StartSession_returns_error
+    room.ResumeParticipant--failed, returns_error-->StartSession_ends
     room.ResumeParticipant--success-->start_r.rtcSessionWorker
 
-    room.GetParticipant--participant not exist-->rtc.NewParticipant
+    room.GetParticipant--participant doesn't exist-->rtc.NewParticipant
 
     rtc.NewParticipant-->room.Join
     
-    room.Join-->start_r.rtcSessionWorker-->StartSession_returns_success
+    room.Join-->start_r.rtcSessionWorker--returns_success-->StartSession_ends
     room.Join--send JoinResponse-->client
 ```
 
@@ -332,7 +332,7 @@ graph TB
     check_Participant_MaxNumber-->set_Participant_callbacks-->save_Participant_to_Room-->send_JoinResponse_to_Client-->exec_Subscribe_for_Participant-->room.Join_ends
 ```
 
-- 先检查能否将参会人加入房间
+- 先检查能否将参会人加入房间，包括检查房间是否已经关闭，参会人是否已经加入该房间，当前房间的参会人人数是否已经超出房间设置的人数上限；
 - 如果可以，将为参会人设置各个与媒体发布、订阅还有数据相关的回调函数，包括：
 
 ```go
@@ -412,5 +412,5 @@ func (r *RoomManager) rtcSessionWorker(room *rtc.Room, participant types.LocalPa
 协程 RoomManager.rtcSessionWorker() 负责的工作是：
 
 - 每间隔 tokenRefreshInterval (默认设置是5分钟) 更新参会者的 token;
-- 每间隔 500ms 检查参会者是否在线;
-- 从channel读取参会者的请求，调用 HandleParticipantSignal() 函数进行相应的处理。
+- 每间隔 500ms 检查参会人是否在线;
+- 从channel读取参会人的请求，调用 HandleParticipantSignal() 函数进行相应的处理。
