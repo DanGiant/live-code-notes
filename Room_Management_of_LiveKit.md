@@ -6,6 +6,14 @@ LiveKit Server是一个 WebRTC SFU (Selective Forward Unit) 流媒体服务器�
 
 ## [2. 房间 (即会议室，Room)](./Room.md)
 
-## [3. 参会者 (Participant) 加入房间](./Participant_Join_Room.md)
+## [3. 参会人 (Participant)](./Participant.md)
 
-## [4. 关闭房间](./Close_the_Room.md)
+## [4. 参会人 (Participant) 加入房间](./Participant_Join_Room.md)
+
+## [5. 参会人发布媒体](./Participant_Publish_MediaTracks.md)
+
+## [6. 参会人订阅媒体](./Participant_Subscribe_MediaTracks.md)
+
+## [7. 参会人之间进行数据通信](./Participant_Data_Communication.md)
+
+## [8. 关闭房间](./Close_the_Room.md)

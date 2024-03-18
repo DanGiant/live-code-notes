@@ -1,6 +1,6 @@
-## 3. 参会人 (Participant) 加入房间
+## 4. 参会人 (Participant) 加入房间
 
-### 3.1 StartSession() 的调用路径
+### 4.1 StartSession() 的调用路径
 
 RoomManager.StartSession() 函数的作用是启动参会者的会议会话。每个参会者 (Participant) 都通过调用 RoomManager.StartSession() 函数进入房间参加会议。StartSession() 函数为新加入的参会者运行一个单独的 rtcSessionWorker go 协程，处理该参会者的消息和事件。
 
@@ -48,7 +48,7 @@ graph TB
     service.NewDefaultSignalServer-->RoomManager.StartSession
 ```
 
-### 3.2 StartSession() 函数的主要流程
+### 4.2 StartSession() 函数的主要流程
 
 StartSession() 函数的主要流程如下图所示：
 
@@ -79,7 +79,7 @@ graph TB
 
 - 如果参会人加入房间成功，StartSession() 函数为参会人启动 rtcSessionWorker go 协程并返回。
 
-### 3.3 getOrCreateRoom() 函数：获取房间，或创建新房间
+### 4.3 getOrCreateRoom() 函数：获取房间，或创建新房间
 
 StartSession() 函数首先将为刚加入的参会者，根据其入会请求的 Token 中携带的欲加入的房间的 RoomName 调用 getOrCreateRoom() 函数，查找房间对象。如果房间还未创建，getOrCreateRoom 将会创建名为 RoomName 的房间并返回房间对象。
 </br>
@@ -90,7 +90,7 @@ getOrCreateRoom() 函数的定义如下：
 func (r *RoomManager) getOrCreateRoom(ctx context.Context, roomName livekit.RoomName) (*rtc.Room, error)
 ```
 
-#### 3.3.1 获取存在的房间
+#### 4.3.1 获取存在的房间
 
 该函数先根据房间名RoomName获取房间对象。如果房间存在则直接返回。
 
@@ -104,7 +104,7 @@ func (r *RoomManager) getOrCreateRoom(ctx context.Context, roomName livekit.Room
     }
 ```
 
-#### 3.3.2 房间不存在，为创建房间获取房间信息
+#### 4.3.2 房间不存在，为创建房间获取房间信息
 
 如房间不存在，就先调用 ServiceStore 接口的 LoadRoom() 函数获取房间信息。RoomManager 的成员 roomStore 实现了 ObjectStore 接口（ObjectStore接口继承 ServiceStore 接口）的实例，会根据实例的不同，调用不同版本的 LoadRoom() 实现。由于 livekit-server 支持本地存储和 Redis 存储两种方式启动，房间信息也根据启动 livekit-server 时配置文件 config.yaml 中 redis 存储的启用与否，调用不同版本（LocalStore 或者 RedisStore）的 ObjectStore 接口实现。
 
@@ -116,7 +116,7 @@ func (r *RoomManager) getOrCreateRoom(ctx context.Context, roomName livekit.Room
     }
 ```
 
-#### 3.2.3 根据房间信息创建新房间
+#### 4.3.3 根据房间信息创建新房间
 
 
 ```go
@@ -139,7 +139,7 @@ func (r *RoomManager) getOrCreateRoom(ctx context.Context, roomName livekit.Room
                            r.serverInfo, r.telemetry, r.agentClient, r.egressLauncher)
 ```
 
-#### 3.3.4 注册房间关闭回调函数 Room.OnClose()
+#### 4.3.4 注册房间关闭回调函数 Room.OnClose()
 
 ```go
     roomTopic := rpc.FormatRoomTopic(roomName)
@@ -165,7 +165,7 @@ func (r *RoomManager) getOrCreateRoom(ctx context.Context, roomName livekit.Room
     })
 ```
 
-#### 3.3.5 注册房间更新回调函数
+#### 4.3.5 注册房间更新回调函数
 
 ```go
     newRoom.OnRoomUpdated(func() {
@@ -175,7 +175,7 @@ func (r *RoomManager) getOrCreateRoom(ctx context.Context, roomName livekit.Room
     })
 ```
 
-#### 3.3.6 注册参会者变化通知回调函数
+#### 4.3.6 注册参会者变化通知回调函数
 
 ```go
     newRoom.OnParticipantChanged(func(p types.LocalParticipant) {
@@ -187,7 +187,7 @@ func (r *RoomManager) getOrCreateRoom(ctx context.Context, roomName livekit.Room
     })
 ```
 
-#### 3.3.7 更新RoomManager的房间列表，增加房间的引用计数
+#### 4.3.7 更新RoomManager的房间列表，增加房间的引用计数
 
 ```go
     r.rooms[roomName] = newRoom
@@ -197,13 +197,13 @@ func (r *RoomManager) getOrCreateRoom(ctx context.Context, roomName livekit.Room
     newRoom.Hold()
 ```
 
-### 3.4 创建参会人对象
+### 4.4 创建参会人对象
 
-#### 3.4.1 只创建房间不创建参会人
+#### 4.4.1 只创建房间不创建参会人
 
 如果调用 StartSession() 函数时传入的参会人标识（ParticipantInfo 的 Identity 成员）为空，StartSession 将只创建房间，不会创建参会人对象，自然也没有参会人的 rtcWorkerSession 协程。
 
-#### 3.4.2 获取存在的参会人对象
+#### 4.4.2 获取存在的参会人对象
 
 如果调用 StartSession() 函数时传入了参会人标识 (ParticipantIdentity)，将根据参会者的标识从房间查找参会人对象。
 
@@ -213,7 +213,7 @@ func (r *RoomManager) getOrCreateRoom(ctx context.Context, roomName livekit.Room
 
 如果是已经加入房间的参会人，则会根据调用 StartSession() 时传入的 routing.ParticipantInit 指定的参会人是否因为断开重连的原因（pi.Reconnect）启动本次会话。
 
-#### 3.4.3 创建新的参会人对象
+#### 4.4.3 创建新的参会人对象
 
 如果房间中不存在该参会人，则为参会人配置相关信息，调用 rtc.NewParticipant() 函数创建新参会人实例。
 
@@ -264,7 +264,7 @@ func (r *RoomManager) getOrCreateRoom(ctx context.Context, roomName livekit.Room
     }
 ```
 
-#### 3.4.4 参会人加入房间
+#### 4.4.4 参会人加入房间
 
 创建新参会人实例之后，StartSession() 函数调用下面的代码将新参会人加入房间。
 
@@ -286,7 +286,7 @@ func (r *RoomManager) getOrCreateRoom(ctx context.Context, roomName livekit.Room
 参会人加入房间时，会同时设置是否自动订阅 (AutoSubscribe)，并设置参会人的 ICE 服务器。
 加入房间通过调用 room.Join() 函数完成，该函数请见第 [3.5 将参会人加入房间](#35-roomjoin-将参会人加入房间) 节。
 
-#### 3.4.5 设置新参会者的OnClose回调函数
+#### 4.4.5 设置新参会者的OnClose回调函数
 
 ```go
     participant.OnClose(func(p types.LocalParticipant) {
@@ -303,7 +303,7 @@ func (r *RoomManager) getOrCreateRoom(ctx context.Context, roomName livekit.Room
     })
 ```
 
-#### 3.4.6 设置新参会者的其他回调函数
+#### 4.4.6 设置新参会者的其他回调函数
 
 ```go
     participant.OnClaimsChanged(func(participant types.LocalParticipant) {
@@ -322,7 +322,7 @@ func (r *RoomManager) getOrCreateRoom(ctx context.Context, roomName livekit.Room
     })
 ```
 
-### 3.5 room.Join() 将参会人加入房间
+### 4.5 room.Join() 将参会人加入房间
 
 room.Join() 函数完成了下面的工作:
 
@@ -362,7 +362,7 @@ graph TB
 - 向客户端发送 JoinResponse 应答。该应答是新加入参会人的 ws 连接收到的第一个应答；
 - 在参会人设置了 SubscriberAsPrimary (订阅作为主 PeerConnection) 时，为参会人启动订阅，订阅房间内的其他参会人的媒体轨。
 
-### 3.6 为新参会者启动go协程
+### 4.6 为新参会者启动go协程
 
 ```go
 go r.rtcSessionWorker(room, participant, requestSource)
