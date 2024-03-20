@@ -2,7 +2,9 @@
 
 ### 5.1 pendingTrackInfo 结构
 
-pendingTrackInfo 结构，根据其字面意思，就是待处理的媒体轨的信息。它封装了一个 livekit.TrackInfo 数组。livekit.TrackInfo 结构是 protobuf 定义的媒体轨信息 message TrackInfo 的 go 版本定义，存储了音频或者视频轨道的基础信息。protobuf 定义的 message 结构可用于在客户端与服务器之间交互数据。
+pendingTrackInfo 结构，根据其字面意思，就是待处理的媒体轨的信息。它有一个 livekit.TrackInfo 类型的数组成员变量 trackInfos。
+
+livekit.TrackInfo 结构是 protobuf 定义的媒体轨信息 message TrackInfo 的 go 版本定义，存储了音频或者视频轨道的基础信息。protobuf 定义的 message 结构可用于在客户端与服务器之间交互数据。
 
 pendingTrackInfo 结构的定义代码:
 
@@ -162,7 +164,7 @@ func (p *ParticipantImpl) AddTrack(req *livekit.AddTrackRequest) {
 
 LocalParticipant.CanPublishSource() 方法验证参会人是否允许将媒体源发布。
 
-ParticipantImpl.addPendingTrackLocked() 方法用 AddTrackRequest 的数据填写 livekit.TrackInfo 结构（这两个结构的成员几乎完全一致，除了 AddTrackRequest 结构多了一个 CID 成员标识轨道的客户端 ID，该客户端 ID 可在收到 WebRTC track的时候进行客户端匹配）；用 livekit.TrackInfo 结构生成 pendintTrackInfo 对象，以 客户端 ID 为索引，将其添加到 Participant 的 pendingTracks map[] 中。这么做是因为此时还没有建立 WebRTC 的 PeerConnection 连接，还没有生成真正的 Track 对象。
+ParticipantImpl.addPendingTrackLocked() 方法用 AddTrackRequest 请求中的 Track 数据填写 livekit.TrackInfo 结构（这两个结构的成员几乎完全一致，除了 AddTrackRequest 结构多了一个 CID 成员标识轨道的客户端 ID，该客户端 ID 可在收到 WebRTC track的时候进行客户端匹配）；用 livekit.TrackInfo 结构生成 pendintTrackInfo 对象，以 客户端 ID 为索引，将其添加到 Participant 的 pendingTracks map[] 中。这么做是因为此时还没有建立 WebRTC 的 PeerConnection 连接，还没有生成真正的 Track 对象，LiveKit 服务器需要保存待处理的 track 信息数据，在推送流连接成功时用 
 
 最后，调用 ParticipantImpl.sendTrackPublished() 方法向客户端返回 TrackPublishedResponse 应答，包含新增 Track 的 TrackInfo 结构。客户端此时可以从 TrackInfo 中取得新增 Track 的服务器标识 SID 和服务器实际设置的 Track 相关参数。
 
@@ -170,10 +172,86 @@ ParticipantImpl.addPendingTrackLocked() 方法用 AddTrackRequest 的数据填�
 type TrackPublishedResponse struct {
     ....
 
-	Cid   string     `protobuf:"bytes,1,opt,name=cid,proto3" json:"cid,omitempty"`
-	Track *TrackInfo `protobuf:"bytes,2,opt,name=track,proto3" json:"track,omitempty"`
+    Cid   string     `protobuf:"bytes,1,opt,name=cid,proto3" json:"cid,omitempty"`
+    Track *TrackInfo `protobuf:"bytes,2,opt,name=track,proto3" json:"track,omitempty"`
 }
 ```
 
 #### 5.2.2 客户端推送媒体轨道
 
+客户端新增发布媒体轨的流程：
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant Client
+    participant rtcSessionWorker
+    participant ParticipantImpl
+    participant TransportManager
+    participant publisher
+
+    Client->>rtcSessionWorker: send AddTrackRequest
+    rtcSessionWorker->>ParticipantImpl: call AddTrack()
+    ParticipantImpl-->>Client: response TrackPublishedResponse
+
+    Client->>Client: publisherShouldNegotiate()
+    Client->>rtcSessionWorker: send SDP offer
+    rtcSessionWorker->>ParticipantImpl: call HandleOffer()
+
+    par ParticipantImpl.HandleOffer
+        ParticipantImpl->>ParticipantImpl: call setCodecPreferencesForPublisher()<br/>to apply server side codec priority
+        ParticipantImpl->>TransportManager: call HandleOffer()
+
+        par TransportManager.HandleOffer
+            TransportManager->>publisher: call HandleRemoteDescription()
+            par publisher.HandleRemoteDescription
+                publisher->>publisher: post signalRemoteDescriptionReceived event
+                publisher->>publisher: handleRemoteOfferReceived()
+
+                par publisher.handleRemoteOfferReceived
+                    publisher->>publisher: call setRemoteDescription() <br/>to apply remote SDP offer
+                    publisher->>publisher: call createAndSendAnswer() <br/>to create local SDP answer and <br/>send back to Client
+                    publisher->>TransportManager: call OnPublisherAnswer()
+                    TransportManager->>ParticipantImpl: call onPublisherAnswer()
+                    ParticipantImpl->>Client: response SDP answer
+                    publisher->>publisher: call localDescriptionSent() <br/>to trigger ICE candidate collection
+                end
+            end
+        end
+    end
+
+    publisher-->>Client: send TrickleRequest
+    Client-->>publisher: send TrickleRequest
+    Client-->>publisher: establish webrtc PeerConnection
+
+    loop for each Track in PeerConnection
+        publisher->>publisher: call publisher.onTrack()
+
+        publisher->>ParticipantImpl: call onMediaTrack
+        ParticipantImpl->>ParticipantImpl: call mediaTrackReceived()
+        ParticipantImpl->>ParticipantImpl: call addMediaTrack() create new MediaTrack
+        ParticipantImpl->>ParticipantImpl: addMediaTrack() will get TrackInfo from pendingTracks
+        ParticipantImpl-->>Client: TrackPublishedResponse
+    end
+
+```
+
+</br>
+
+- 参会人客户端发送 AddTrackRequest 请求新增发布媒体轨道；
+
+- AddTrackRequest 请求被发送到该参会人的对应 rtcSessionWorker 协程，由该协程调用参会人 ParticipantImpl 对象的 AddTrack() 方法；
+
+- ParticipantImpl 回复 TrackPublishedResponse 给客户端，携带新增媒体轨的 TrackInfo 信息；
+
+- 客户端开启媒体协商流程，创建 webrtc PeerConnection 获取本地的 SessionDescription Offer 发送给服务器。该 SDP offer 最终被发送给 ParticipantImpl 内部 TransportManager 类指针成员的负责参会人发布的媒体流的传输管理器 publisher；
+
+- publisher 接收该 SDP offer，调用 createAndSendAnswer() 方法，协商并生成 SesssionDescription answer，将之发回客户端；
+
+- 负责发布新媒体轨的两端的 webrtc 协商完 SDP 的 offer 和 answer 之后，互相发送 TrickleRequest 协商 IP 和端口建立 PeerConnection 连接，传输新发布的媒体流。由于支持视频 Simulcast 方式，视频流中可能会有多个子流，PeerConnection 连接中的 Track 的每个子流传输的成功建立都会触发服务器端回调函数 publisher.onTrack()。publisher.onTrack() 指向 ParticipantImpl.onMediaTrack()，最终调用 ParticipantImpl.mediaTrackReceived()；
+
+- ParticipantImpl.mediaTrackReceived() 函数的参数是 webrtc 的 TrackRemote 对象和 RTPReceiver 对象。 Simulcast 流的每个子流都有一个对应的 RTPReceiver 对象。mediaTrackReceived() 函数调用 getPublishedTrackBySdpCid() 方法，用 Track 的 ID 为参数查找已经创建的 MediaTrack 实例。如果不存在 Track.ID 对应的 MediaTrack 实例，就创建新 MediaTrack 实例。
+
+- MediaTrack 类是 LiveKit Server 内部表示媒体流轨道的类，它实现了 LocalMediaTrack 接口和 LocalMediaTrack 接口继承的 MediaTrack 接口的所有方法。通过将 RTPReceiver 媒体RTP接收器对象添加到 MediaTrack 实例中实现添加 Simulcast 子流。
+
+- mediaTrackReceived() 函数还会在最后以 go 协程方式异步调用 ParticipantImpl.handleTrackPublished()，最终调用注册的回调函数 Room.onTrackPublished()。通过 Room.onTrackPublished() 回调，通知所在房间有新增的媒体轨。Room 对象在这个函数中会协调房间中的其他参会人对发布媒体的参会人的媒体轨道进行订阅。
