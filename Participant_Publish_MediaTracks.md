@@ -220,8 +220,8 @@ sequenceDiagram
         end
     end
 
-    publisher-->>Client: send TrickleRequest
-    Client-->>publisher: send TrickleRequest
+    publisher->>Client: send TrickleRequest
+    Client->>publisher: send TrickleRequest
     Client-->>publisher: establish webrtc PeerConnection
 
     loop for each Track in PeerConnection
@@ -229,8 +229,26 @@ sequenceDiagram
 
         publisher->>ParticipantImpl: call onMediaTrack
         ParticipantImpl->>ParticipantImpl: call mediaTrackReceived()
-        ParticipantImpl->>ParticipantImpl: call addMediaTrack() create new MediaTrack
-        ParticipantImpl->>ParticipantImpl: addMediaTrack() will get TrackInfo from pendingTracks
+
+        par ParticipantImpl.mediaTrackReceived
+            ParticipantImpl->>ParticipantImpl: call getPublishedTrackBySdpCid() to get existing MediaTrack
+            ParticipantImpl->>ParticipantImpl: if MediaTrack does not exist,<br/>call addMediaTrack()
+
+            par ParticipantImpl.addMediaTrack
+                ParticipantImpl->>MediaTrack: NewMediaTrack() create new MediaTrack
+            end
+
+            ParticipantImpl->>MediaTrack: call AddReceiver() add RTPReceiver
+            ParticipantImpl->>ParticipantImpl: start handleTrackPublished() go-routine
+        end
+
+        ParticipantImpl->>ParticipantImpl: onTrackUpdated()
+        par onTrackUpdated
+            ParticipantImpl->>Room: onTrackUpdated
+            Room->>Room: onParticipantChanged
+            Room->>RoomManager.RoomStore: StoreParticipant
+        end
+
         ParticipantImpl-->>Client: TrackPublishedResponse
     end
 
