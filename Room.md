@@ -112,13 +112,21 @@ livekit.Room类各成员的作用如下：
 
 ```txt
 Sid:             服务器给房间分配的ID，即ServerID。
+
 Name:            房间名。
+
 EmptyTimeout:    检测到房间中无人时关闭房间的延后时间。
+
 MaxParticipants: 房间支持的最大参会者数。
+
 TurnPassword:    TURN中继服务器的密码。如果启用了TURN服务器并设置了访问密码，需要向客户端传输该数据。
+
 EnabledCodecs:   服务器支持的音频和视频的编码格式列表。
+
 Metadata:        房间的元数据。
+
 NumParticipants: 当家房间中的参会者数。
+
 ActiveRecording: 是否正在进行录像。
 ```
 
@@ -176,7 +184,7 @@ type RoomTrackManager struct {
 房间媒体流轨道管理器负责房间内的所有已经发布媒体流（包括音频流和视频流）轨道。
 
 ```txt
-tracks:  map[livekit.TrackID]*TrackInfo 类型，存储以 TrackID 为索引的媒体轨数据；
+tracks:          map[livekit.TrackID]*TrackInfo 类型，存储以 TrackID 为索引的媒体轨数据；
 
 changedNotifier: 媒体轨的变化通知器，ChangeNotifierManager 类实例，存储 notifiers map[string]*ChangeNotifier 映射，管理所有已发布媒体流的变化通知器。参会人对媒体流的变更通过各自的媒体流 ChangeNotifier 通知到房间并由房间以广播方式转发。
 
@@ -196,13 +204,13 @@ removedNotifier: 媒体轨的删除通知器，ChangeNotifierManager 类实例�
 上述4个成员变量管理房间中的参会者 (Participant)。均为 map[] 类型，以 ParticipantIdentity (其实是个重定义的 string 类型，存储参会者的唯一标识) 为索引。其作用如下：
 
 ```txt
-participants: 存储房间中的参会人实例。声明中指定存储实现了 types.LocalParticipant 接口的类实例，实际存储的是 ParticipantImpl 类对象，实现代码位于 pkg/rtc/participant.go。
+participants:    存储房间中的参会人实例。声明中指定存储实现了 types.LocalParticipant 接口的类实例，实际存储的是 ParticipantImpl 类对象，实现代码位于 pkg/rtc/participant.go。
 
 participantOpts: 存储参会人实例的配置，目前 ParticipantOptions 成员只有 AutoSubscribe (bool 型)，控制参会人是否自动订阅房间中发布的媒体流。
 
 participantRequestSources: 存储参会人实例的 MessageSource 接口对象。用于监视参会人的业务请求、管理参会人的信令连接。
 
-hasPublished: 存储参会人实例的媒体流发布状态。
+hasPublished:    存储参会人实例的媒体流发布状态。
 ```
 
 #### 2.2.5 管理房间状态和生命周期的成员变量
@@ -219,12 +227,11 @@ hasPublished: 存储参会人实例的媒体流发布状态。
 ```txt
 joinedAt: 第一个参会者加入会议室的时间。
 
-holds: 房间的引用计数器，用于控制房间关闭的变量。
+holds:    房间的引用计数器，用于控制房间关闭的变量。
 
-leftAt: 最后一个参会者离开房间的时间。
+leftAt:   最后一个参会者离开房间的时间。
 
-closed: 用于接收房间是否关闭的 channel。
-
+closed:   用于接收房间是否关闭的 channel。
 ```
 
 #### 2.2.6 与加密相关的成员变量
@@ -246,7 +253,7 @@ closed: 用于接收房间是否关闭的 channel。
 ```txt
 onParticipantChanged: 通知有参会人发生变化。
 
-onRoomUpdated: 通知房间信息发生了变化。
+onRoomUpdated:        通知房间信息发生了变化。
 
-onClose: 通知房间已经关闭。
+onClose:              通知房间已经关闭。
 ```
